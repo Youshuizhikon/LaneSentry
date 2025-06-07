@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import onnxruntime as ort
+import time
 
 COCO_CLASSES = {
     1: 'person', 2: 'bicycle', 3: 'car', 4: 'motorcycle', 5: 'airplane',
@@ -81,6 +82,9 @@ def main():
     cap = cv2.VideoCapture(0)
     # 使用cpu初始化推理
     session = ort.InferenceSession('yolo11n.onnx', providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+    # 初始化计时器
+    time_count = 0
+    start_time = time.time()
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -104,8 +108,12 @@ def main():
             conf = i[4]
             name = COCO_CLASSES.get(cls_id, 'unknown')
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(frame, f'{name}:{conf:.2f}', (x1,y1),cv2.FONT_HERSHEY_SIMPLEX, 0.5,(0,255,0),2,bottomLeftOrigin=False)
+            cv2.putText(frame, f'{name}:{conf:.2f}', (x1,y1),cv2.FONT_HERSHEY_SIMPLEX, 0.5,(0,255,0),2)
 
+        # 计算并显示fps
+        time_count += 1
+        fps = int(time_count / (time.time()-start_time))
+        cv2.putText(frame, f"{fps=}", (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255),2)
         cv2.imshow('det', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break

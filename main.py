@@ -3,6 +3,8 @@ import time
 import cv2
 import numpy as np
 import onnxruntime as ort
+from PIL import ImageDraw, Image, ImageFont
+from cnocr import CnOcr
 
 
 def cxcywh2xyxy(boxes: np.ndarray) -> np.ndarray:
@@ -99,6 +101,7 @@ def yolo_plate_preprocess(outputs: np.ndarray, conf_thres=0.5, iou_thres=0.45):
 
 
 def main(img_path: str):
+    ocr = CnOcr()
     start_time = time.time()
 
     img = cv2.imread(img_path)
@@ -165,10 +168,22 @@ def main(img_path: str):
             abs_px2 = draw_x1 + int(px2 * (draw_x2 - draw_x1) / 640)
             abs_py2 = draw_y1 + int(py2 * (draw_y2 - draw_y1) / 640)
             if pconf != 0:
+                # 文字检测
+                plate_region = img[abs_py1:abs_py2, abs_px1:abs_px2][:, :, ::-1]  # BGR转RGB
+                text = ocr.ocr(plate_region)[0]['text']
+                # 绘制文字
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+                plt_img = Image.fromarray(img_rgb)
+                font = ImageFont.truetype("simsun.ttc", 20)
+                draw = ImageDraw.Draw(plt_img)
+                draw.text((abs_px1, abs_py1 - 20), text, font=font, fill=(255, 0, 0))
+
+                img = cv2.cvtColor(np.array(plt_img), cv2.COLOR_RGB2BGR)
                 # 绘制车牌框
                 cv2.rectangle(img, (abs_px1, abs_py1), (abs_px2, abs_py2), (255, 0, 0), 2)
-                cv2.putText(img, f'plate:{pconf:.2f}', (abs_px1, abs_py1 - 15),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 3)
+                # cv2.putText(img, f'plate:{pconf:.2f}', (abs_px1, abs_py1 - 15),
+                #            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 3)
 
     print(time.time()-start_time)
     cv2.imshow('det', img)
@@ -178,4 +193,4 @@ def main(img_path: str):
 
 
 if __name__ == '__main__':
-    main('car_label.png')
+    main('car.jpg')

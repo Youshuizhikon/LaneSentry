@@ -6,6 +6,8 @@ import onnxruntime as ort
 from PIL import ImageDraw, Image, ImageFont
 from cnocr import CnOcr
 
+from EmailSend import send_email
+
 
 def cxcywh2xyxy(boxes: np.ndarray) -> np.ndarray:
     """
@@ -184,7 +186,7 @@ def main(img_path: str):
                 cv2.rectangle(img, (abs_px1, abs_py1), (abs_px2, abs_py2), (255, 0, 0), 2)
                 # cv2.putText(img, f'plate:{pconf:.2f}', (abs_px1, abs_py1 - 15),
                 #            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 3)
-
+                send_email(True, img, text, pconf)
     print(time.time()-start_time)
     cv2.imshow('det', img)
 

@@ -6,7 +6,7 @@ import onnxruntime as ort
 from PIL import ImageDraw, Image, ImageFont
 from cnocr import CnOcr
 
-from EmailSend import send_email
+from api.EmailSend import send_email
 
 
 def cxcywh2xyxy(boxes: np.ndarray) -> np.ndarray:
@@ -109,12 +109,12 @@ def main(img_path: str):
     img = cv2.imread(img_path)
     # 使用cuda,cpu初始化推理
     # 初始化汽车检测yolo11n
-    session_yolo = ort.InferenceSession('carbusvansother.onnx',
+    session_yolo = ort.InferenceSession('det_model/carbusvansother.onnx',
                                         providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
     input_name_yolo = session_yolo.get_inputs()[0].name
     output_name_yolo = session_yolo.get_outputs()[0].name
     # 初始化车牌检测
-    session_plate = ort.InferenceSession('car_plate_det.onnx',
+    session_plate = ort.InferenceSession('det_model/car_plate_det.onnx',
                                          providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
     input_name_plate = session_plate.get_inputs()[0].name
     output_name_plate = session_plate.get_outputs()[0].name
@@ -177,7 +177,7 @@ def main(img_path: str):
                 img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
                 plt_img = Image.fromarray(img_rgb)
-                font = ImageFont.truetype("simsun.ttc", 20)
+                font = ImageFont.truetype("sundries/simsun.ttc", 20)
                 draw = ImageDraw.Draw(plt_img)
                 draw.text((abs_px1, abs_py1 - 20), text, font=font, fill=(255, 0, 0))
 
@@ -195,4 +195,4 @@ def main(img_path: str):
 
 
 if __name__ == '__main__':
-    main('car.jpg')
+    main('test/car.jpg')

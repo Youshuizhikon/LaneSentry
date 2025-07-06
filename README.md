@@ -10,7 +10,7 @@
 
 ## 📸 演示效果
 
-![演示](example.png)
+![](sundries/example.png "演示")
 
 ## 🔍 项目概述
 
@@ -33,11 +33,13 @@ git clone https://github.com/Youshuizhikon/LaneSentry.git
 cd LaneSentry
 #pip install uv # 如果没有安装uv
 uv sync  # 最好Python 3.12+
+# 在api/SendEmail.py 配置邮件信息
 python run mian.py
 ```
 
 ## 📅更新介绍
 
+- **Demo-0.4**：现版本，添加**邮箱通知功能**，请到api/EamilSend.py中配置。
 - **Demo-0.3**：在main.py中集成OCR功能以**识别车牌文字**并绘制到图像上。
 - **Demo-0.2**: 添加**车牌检测**功能，修改为图片获取。修正坐标标注缩放逻辑。
 - **Demo-0.1**: 初始版本，集成YOLOv11**车辆检测**模型。

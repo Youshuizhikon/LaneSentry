@@ -104,11 +104,16 @@ def yolo_plate_preprocess(outputs: np.ndarray, conf_thres=0.5, iou_thres=0.45):
     return detections
 
 
-def model_inference(img_path: str):
+def model_inference(img: np.ndarray):
+    """
+    对图片中的车辆和车牌进行检测并识别
+    :param img_path: 图片文件数组
+    :return: tuple(检测后的图片: ndarray, 车牌信息字典: dict)，字典格式为{车辆ID: (车牌号码: str, 置信度: float)}
+    """
     ocr = CnOcr()
     start_time = time.time()
 
-    img = cv2.imread(img_path)
+    # img = cv2.imread(img_path)
     # 使用cuda,cpu初始化推理
     # 初始化汽车检测yolo11n
     session_yolo = ort.InferenceSession('../det_model/carbusvansother.onnx',
@@ -205,10 +210,11 @@ def model_inference(img_path: str):
 
     print(f'运行时间：{(time.time() - start_time):.2f}')
     print(f'返回数据dict(id:tuple(plate_text: str, pconf: float)\n:{plate_data}')
-    cv2.imshow('det', img)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    # cv2.imshow('det', img)
+    # cv2.waitKey(0)
+    #cv2.destroyAllWindows()
 
+    # 返回数据
     return img, plate_data
 
 

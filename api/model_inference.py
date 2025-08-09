@@ -41,7 +41,7 @@ def yolo_body_preprocess(outputs: np.ndarray, conf_thres=0.5, iou_thres=0.45):
     :param outputs: onnxruntime推理后的结果文件
     :param conf_thres: 置信度阈值
     :param iou_thres: opencviou阈值，用于检测重叠框
-    :return: detections: np.array([x1,y1,x2,y2,conf,cls])
+    :return: detections: np.ndarray([x1,y1,x2,y2,conf,cls])
     """
     # 重塑和转置
     predictions = outputs.squeeze().T  # (8400,8)
@@ -96,25 +96,27 @@ def yolo_plate_preprocess(outputs: np.ndarray, conf_thres=0.5, iou_thres=0.45):
         nms_threshold=iou_thres,
     )
 
-    detections = np.zeros((len(boxes), 5))
+    detections = np.zeros((1, 5))  # 默认返回空值
     if len(indices) > 0:
-        detections = np.column_stack([boxes, scores])[indices]
+        # [0]保证拿到最高得分的数据
+        detections = np.column_stack([boxes, scores])[indices][0]
+        print(f'预处理信息（x1,y1,x2,y2,conf）：{detections}')
     return detections
 
 
-def main(img_path: str):
+def model_inference(img_path: str):
     ocr = CnOcr()
     start_time = time.time()
 
     img = cv2.imread(img_path)
     # 使用cuda,cpu初始化推理
     # 初始化汽车检测yolo11n
-    session_yolo = ort.InferenceSession('det_model/carbusvansother.onnx',
+    session_yolo = ort.InferenceSession('../det_model/carbusvansother.onnx',
                                         providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
     input_name_yolo = session_yolo.get_inputs()[0].name
     output_name_yolo = session_yolo.get_outputs()[0].name
     # 初始化车牌检测
-    session_plate = ort.InferenceSession('det_model/car_plate_det.onnx',
+    session_plate = ort.InferenceSession('../det_model/car_plate_det.onnx',
                                          providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
     input_name_plate = session_plate.get_inputs()[0].name
     output_name_plate = session_plate.get_outputs()[0].name
@@ -125,13 +127,18 @@ def main(img_path: str):
     outputs = session_yolo.run([output_name_yolo], {input_name_yolo: input_tensor})[0]
 
     # 数据处理
-    detections = yolo_body_preprocess(outputs, 0.5, 0.5)
+    cars = yolo_body_preprocess(outputs, 0.5, 0.5)
+
+    # 检测数据初始化
+    car_id = 0
+    plate_num = 0  # 检测到的车牌数量
+    plate_data = {}
     # 绘制
-    for car in detections:
+    for car in cars:
         x1, y1, x2, y2 = car[:4].astype(int)
-        cls_id = car[5].astype(int)
-        name = 'car'  # 获取类别名称
         conf = car[4]
+        if conf == 0:  # 没有车辆时
+            continue
 
         # 计算原始图像和处理图像的缩放比例
         img_height, img_width = img.shape[:2]
@@ -143,56 +150,67 @@ def main(img_path: str):
         draw_y1 = int(y1 * scale_y)
         draw_x2 = int(x2 * scale_x)
         draw_y2 = int(y2 * scale_y)
-
+        # 绘制车辆区域
         cv2.rectangle(img, (draw_x1, draw_y1), (draw_x2, draw_y2), (0, 255, 0), 2)
-        cv2.putText(img, f'{name}:{conf:.2f}', (draw_x1, draw_y1 - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+        cv2.putText(img, f'id:{car_id}:{conf:.2f}', (draw_x1, draw_y1 - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                     (0, 255, 0), 3)
-
 
         # 车牌检测
         car_region = img[draw_y1:draw_y2, draw_x1:draw_x2]
         # 检查裁剪区域是否为空
         if car_region.size == 0:
+            car_id += 1
             # print("车牌区域为空，跳过处理")
             continue
         input_plate_tensor = img_preprocess(car_region)
         # 推理
         plate_outputs = session_plate.run([output_name_plate], {input_name_plate: input_plate_tensor})[0]
-        # 车牌数据处理
-        plates = yolo_plate_preprocess(plate_outputs, 0.5, 0.5)
-        for plate in plates:
-            px1, py1, px2, py2 = plate[:4].astype(int)
-            pconf = plate[4]
+        # 车牌数据预处理
+        plate = yolo_plate_preprocess(plate_outputs, 0.5, 0.5)
 
-            # 计算车牌在原始图像中的绝对坐标
-            abs_px1 = draw_x1 + int(px1 * (draw_x2 - draw_x1) / 640)
-            abs_py1 = draw_y1 + int(py1 * (draw_y2 - draw_y1) / 640)
-            abs_px2 = draw_x1 + int(px2 * (draw_x2 - draw_x1) / 640)
-            abs_py2 = draw_y1 + int(py2 * (draw_y2 - draw_y1) / 640)
-            if pconf != 0:
-                # 文字检测
-                plate_region = img[abs_py1:abs_py2, abs_px1:abs_px2][:, :, ::-1]  # BGR转RGB
-                text = ocr.ocr(plate_region)[0]['text']
-                # 绘制文字
-                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        '''车牌信息处理'''
+        pconf = plate[4]
+        if pconf == 0:  # 当车牌不存在时
+            car_id += 1
+            continue
 
-                plt_img = Image.fromarray(img_rgb)
-                font = ImageFont.truetype("sundries/simsun.ttc", 20)
-                draw = ImageDraw.Draw(plt_img)
-                draw.text((abs_px1, abs_py1 - 20), text, font=font, fill=(255, 0, 0))
+        px1, py1, px2, py2 = plate[:4].astype(int)
+        # 计算车牌在原始图像中的绝对坐标
+        abs_px1 = draw_x1 + int(px1 * (draw_x2 - draw_x1) / 640)
+        abs_py1 = draw_y1 + int(py1 * (draw_y2 - draw_y1) / 640)
+        abs_px2 = draw_x1 + int(px2 * (draw_x2 - draw_x1) / 640)
+        abs_py2 = draw_y1 + int(py2 * (draw_y2 - draw_y1) / 640)
 
-                img = cv2.cvtColor(np.array(plt_img), cv2.COLOR_RGB2BGR)
-                # 绘制车牌框
-                cv2.rectangle(img, (abs_px1, abs_py1), (abs_px2, abs_py2), (255, 0, 0), 2)
-                # cv2.putText(img, f'plate:{pconf:.2f}', (abs_px1, abs_py1 - 15),
-                #            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 3)
-                send_email(True, img, text, pconf)
-    print(time.time()-start_time)
+        # 文字检测
+        plate_region = img[abs_py1:abs_py2, abs_px1:abs_px2][:, :, ::-1]  # BGR转RGB
+        plate_text = ocr.ocr(plate_region)[0]['text']
+        # 绘制文字
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        plt_img = Image.fromarray(img_rgb)
+        font = ImageFont.truetype("../sundries/simsun.ttc", 20)
+        draw = ImageDraw.Draw(plt_img)
+        draw.text((abs_px1, abs_py1 - 20), plate_text, font=font, fill=(255, 0, 0))
+
+        img = cv2.cvtColor(np.array(plt_img), cv2.COLOR_RGB2BGR)
+        # 绘制车牌框
+        cv2.rectangle(img, (abs_px1, abs_py1), (abs_px2, abs_py2), (255, 0, 0), 2)
+        # 向数组添加信息
+        plate_data[car_id] = (plate_text, pconf.astype(float))
+        # 发送邮件
+        send_email(True, img, plate_text, pconf)
+        # 增加识别数量
+        car_id += 1
+        plate_num += 1
+
+    print(f'运行时间：{(time.time() - start_time):.2f}')
+    print(f'返回数据dict(id:tuple(plate_text: str, pconf: float)\n:{plate_data}')
     cv2.imshow('det', img)
-
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
+    return img, plate_data
+
 
 if __name__ == '__main__':
-    main('test/car.jpg')
+    model_inference('../test/car.jpg')

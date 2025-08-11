@@ -96,7 +96,7 @@ def yolo_plate_preprocess(outputs: np.ndarray, conf_thres=0.5, iou_thres=0.45):
         nms_threshold=iou_thres,
     )
 
-    detections = np.zeros((1, 5))  # 默认返回空值
+    detections = np.zeros((5,))  # 默认返回空值
     if len(indices) > 0:
         # [0]保证拿到最高得分的数据
         detections = np.column_stack([boxes, scores])[indices][0]
@@ -104,25 +104,24 @@ def yolo_plate_preprocess(outputs: np.ndarray, conf_thres=0.5, iou_thres=0.45):
     return detections
 
 
-def model_inference(img: np.ndarray):
+def model_inference(img: np.ndarray, session_yolo: ort.InferenceSession, session_plate: ort.InferenceSession,
+                    ocr: CnOcr) -> tuple:
     """
     对图片中的车辆和车牌进行检测并识别
     :param img_path: 图片文件数组
-    :return: tuple(检测后的图片: ndarray, 车牌信息字典: dict)，字典格式为{车辆ID: (车牌号码: str, 置信度: float)}
+    :param session_yolo: 车辆检测的onnxruntime会话
+    :param session_plate: 车牌检测的onnxruntime会话
+    :param ocr: CnOcr实例，用于车牌文字识别
+    :return: tuple(检测后的图片: ndarray, 车辆信息字典: dict, 车牌信息字典: dict)，
+    车辆字典格式为{车辆ID: 置信度: float}，
+    车牌字典格式为{车辆ID: (车牌号码: str, 置信度: float)}
     """
-    ocr = CnOcr()
     start_time = time.time()
 
-    # img = cv2.imread(img_path)
-    # 使用cuda,cpu初始化推理
     # 初始化汽车检测yolo11n
-    session_yolo = ort.InferenceSession('../det_model/carbusvansother.onnx',
-                                        providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
     input_name_yolo = session_yolo.get_inputs()[0].name
     output_name_yolo = session_yolo.get_outputs()[0].name
     # 初始化车牌检测
-    session_plate = ort.InferenceSession('../det_model/car_plate_det.onnx',
-                                         providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
     input_name_plate = session_plate.get_inputs()[0].name
     output_name_plate = session_plate.get_outputs()[0].name
 
@@ -138,6 +137,7 @@ def model_inference(img: np.ndarray):
     car_id = 0
     plate_num = 0  # 检测到的车牌数量
     plate_data = {}
+    car_data = {}
     # 绘制
     for car in cars:
         x1, y1, x2, y2 = car[:4].astype(int)
@@ -159,8 +159,9 @@ def model_inference(img: np.ndarray):
         cv2.rectangle(img, (draw_x1, draw_y1), (draw_x2, draw_y2), (0, 255, 0), 2)
         cv2.putText(img, f'id:{car_id}:{conf:.2f}', (draw_x1, draw_y1 - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                     (0, 255, 0), 3)
+        car_data[car_id] = conf
 
-        # 车牌检测
+        '''车牌检测'''
         car_region = img[draw_y1:draw_y2, draw_x1:draw_x2]
         # 检查裁剪区域是否为空
         if car_region.size == 0:
@@ -215,8 +216,18 @@ def model_inference(img: np.ndarray):
     #cv2.destroyAllWindows()
 
     # 返回数据
-    return img, plate_data
+    return (img, car_data, plate_data)
 
 
 if __name__ == '__main__':
-    model_inference('../test/car.jpg')
+    img_array = cv2.imread('../test/car4.jpg')
+    ocr = CnOcr()
+    session_yolo = ort.InferenceSession('../det_model/carbusvansother.onnx',
+                                        providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+    session_plate = ort.InferenceSession('../det_model/car_plate_det.onnx',
+                                         providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+    resp = model_inference(img_array, session_yolo, session_plate, ocr)
+    cv2.imshow('result', resp[0])
+    print(resp[1])
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
